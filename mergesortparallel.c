@@ -206,7 +206,7 @@ int mergeParallel(Block x, Block y, long tempStart, long tempEnd){
     int second = y.start;
     int tempIndex = tempStart;
     while(first < x.end && second < y.end){
-        printf("comparing %d and %d", vecParallel[first], vecParallel[second]);
+        printf("comparing %d and %d\n", vecParallel[first], vecParallel[second]);
         if(vecParallel[first] < vecParallel[second]){
             temp[tempIndex] = vecParallel[first];
             first++;
@@ -240,7 +240,7 @@ int binSearch(int arr[], int a, int b, int x){
             return binSearch(arr, a, mid-1, x);}
         return binSearch(arr, mid+1, b, x);
     }
-    return -1;
+    return a;
 }
 
 
@@ -268,8 +268,8 @@ void multiMerge(int numThreads, Block first, Block second, long tempStart, long 
         xsize = x1end - x1start;
 
         y1start = second.start;
-        ymid = binSearch(vecParallel, second.start, second.end, vecParallel[x2start]);
-        if(ymid == -1){
+        ymid = binSearch(vecParallel, second.start, second.end - 1, vecParallel[x2start]);
+        if(ymid == second.end){
             y2start = second.end;
             y2end = second.end;
             y1end = second.end;

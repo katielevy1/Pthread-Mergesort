@@ -20,7 +20,7 @@ typedef struct Block {
 /* Function Declarations */
 void* threadFunc(void* rank);
 int driverParallel(int start, int stop);
-int mergeParallel(int start, int middle, int stop);
+int mergeParallel(Block x, Block y, long tempStart, long tempEnd);
 void printParallel(int start, int stop);
 int validateParallel();
 int binSearch(int arr[], int a, int b, int x);
@@ -89,12 +89,12 @@ void* threadFunc(void* rank){
     Block beginningRecur;
     Block beginningRecur2;
 
-    // Tree reduction to divide work amoung threads
-    while(difference < threadCount) {
-        // A barrier for all threads to be on the same level
+    // A barrier for all threads to be on the same level
         pthread_mutex_lock(&lock);
         threads_ready++;
         if(threads_ready == threadCount){
+            printf("---------------BARRIER----------------\n");
+            printParallel(0, n);
             for(int i = 0; i < threads_ready; i++){
                 pthread_cond_signal(&ready_cv);
             }
@@ -104,6 +104,9 @@ void* threadFunc(void* rank){
         }
         pthread_mutex_unlock(&lock);
 
+    // Tree reduction to divide work amoung threads
+    while(difference < threadCount) {
+        
         // compensate for uneven amount of threads
         /*if(myRank % divisor == 0){
             partner = myRank + difference;
@@ -127,11 +130,26 @@ void* threadFunc(void* rank){
         beginningRecur.end = myLasti;
         beginningRecur2.start = myLasti;
         beginningRecur2.end = myFirsti + (pow(2, difference) * (n / threadCount));
-        printf("first multimerge Thread %ld, divisor %d, first %ld - %ld, second %ld - %ld myCount: %ld\n", 
+        printf("whileloop multimerge Thread %ld, divisor %d, first %ld - %ld, second %ld - %ld myCount: %ld\n", 
         myRank, divisor, beginningRecur.start, beginningRecur.end, beginningRecur2.start, beginningRecur2.end, myCount);
-        multiMerge(divisor, beginningRecur, beginningRecur2, 0, n, myRank);
+        multiMerge(divisor, beginningRecur, beginningRecur2, beginningRecur.start, beginningRecur2.end, myRank);
         divisor *= 2;
         difference *=2;
+        // A barrier for all threads to be on the same level
+        pthread_mutex_lock(&lock);
+        threads_ready++;
+        if(threads_ready == threadCount){
+            printf("---------------BARRIER----------------\n");
+            memcpy(vecParallel, temp, sizeof(int)*n);
+            printParallel(0, n);
+            for(int i = 0; i < threads_ready; i++){
+                pthread_cond_signal(&ready_cv);
+            }
+            threads_ready = 0;
+        }else {
+            pthread_cond_wait(&ready_cv, &lock);
+        }
+        pthread_mutex_unlock(&lock);
     }
     return 0;
 }
@@ -156,16 +174,39 @@ int driverParallel(int start, int stop){
     int middle = ((stop + start) / 2);
     driverParallel(start, middle);
     driverParallel(middle+1, stop);
-    mergeParallel(start, middle, stop);
+    Block first_merge;
+    Block second_merge;
+    first_merge.start = start;
+    first_merge.end = middle + 1;
+    second_merge.start = middle + 1;
+    second_merge.end = stop + 1;
+    mergeParallel(first_merge, second_merge, start, stop+1);
+    int i;
+    for(i = start; i <= stop; i++){
+        vecParallel[i] = temp[i];
+    }
     return 0;
 }
 
 // Merges two arrays
-int mergeParallel(int start, int middle, int stop){
-    int first = start;
-    int second = middle+1;
-    int tempIndex = start;
-    while(first <= middle && second <= stop){
+int mergeParallel(Block x, Block y, long tempStart, long tempEnd){
+    // Fill array if one of the arrays is empty
+    if(x.start == x.end){
+        for(int i = 0; i < y.end - y.start; i++){
+            temp[tempStart + i] = vecParallel[y.start + i];
+        }
+        return 0;
+    } else if(y.start == y.end){
+        for(int i = 0; i < x.end - x.start; i++){
+            temp[tempStart + i] = vecParallel[x.start + i];
+        }
+        return 0;
+    }
+    int first = x.start;
+    int second = y.start;
+    int tempIndex = tempStart;
+    while(first < x.end && second < y.end){
+        printf("comparing %d and %d", vecParallel[first], vecParallel[second]);
         if(vecParallel[first] < vecParallel[second]){
             temp[tempIndex] = vecParallel[first];
             first++;
@@ -176,19 +217,15 @@ int mergeParallel(int start, int middle, int stop){
             tempIndex++;
         }
     }
-    while(first <= middle){
+    while(first < x.end){
         temp[tempIndex] = vecParallel[first];
             first++;
             tempIndex++;
     }
-    while(second <= stop){
+    while(second < y.end){
         temp[tempIndex] = vecParallel[second];
             second++;
             tempIndex++;
-    }
-    int i;
-    for(i = start; i <= stop; i++){
-        vecParallel[i] = temp[i];
     }
     return 0;
 }
@@ -219,8 +256,8 @@ void printParallel(int start, int stop){
 void multiMerge(int numThreads, Block first, Block second, long tempStart, long tempEnd, long my_rank){
     
     if (numThreads == 1){
-        printf("Thread %ld merging first %ld - %ld and second %ld - %ld\n", my_rank, first.start, first.end, second.start, second.end);
-        
+        printf("Thread %ld merging first %ld - %ld and second %ld - %ld temp %ld - %ld\n", my_rank, first.start, first.end, second.start, second.end, tempStart, tempEnd);
+        mergeParallel(first, second, tempStart, tempEnd);
     } else {
         long x1start, x2start, x1end, x2end, xsize;
         long y1start, y2start, y1end, y2end, y1size, y2size, ymid;
@@ -251,9 +288,9 @@ void multiMerge(int numThreads, Block first, Block second, long tempStart, long 
 
         numThreads /= 2;
         long divide = my_rank % (numThreads * 2);
-        printf("Thread %ld of %d divide %ld x1start %ld, x2start %ld, x1end %ld, x2end %ld, xsize %ld \
-        y1start %ld, y2start %ld, y1end %ld, y2end %ld, y1size %ld, y2size %ld\n", my_rank, numThreads * 2, divide, x1start, x2start, x1end, x2end, xsize,
-        y1start, y2start, y1end, y2end, y1size, y2size);
+        printf("Thread %ld of %d divide %ld \n\tx1start %ld, x2start %ld, x1end %ld, x2end %ld, xsize %ld \
+        y1start %ld, y2start %ld, y1end %ld, y2end %ld, y1size %ld, y2size %ld\n\t temp %ld - %ld\n", my_rank, numThreads * 2, divide, x1start, x2start, x1end, x2end, xsize,
+        y1start, y2start, y1end, y2end, y1size, y2size, tempStart, tempEnd);
         if(my_rank % (numThreads * 2) < numThreads){
             Block fir;
             fir.start = x1start;
@@ -261,10 +298,10 @@ void multiMerge(int numThreads, Block first, Block second, long tempStart, long 
             Block sec;
             sec.start = y1start;
             sec.end = y1end;
-            tempStart = x1start;
-            tempEnd = x1end + y1size;
-            printf("Thread %ld first: %ld --> %ld \n", my_rank, fir.start, fir.end);
-            printf("Thread %ld second: %ld --> %ld\n", my_rank, sec.start, sec.end);
+            tempEnd = tempStart + xsize + y1size;
+   //         printf("Thread %ld first: %ld --> %ld \n", my_rank, fir.start, fir.end);
+   //         printf("Thread %ld second: %ld --> %ld\n", my_rank, sec.start, sec.end);
+            printf("Thread %ld of %d calling multimerge temp %ld - %ld\n", my_rank, numThreads, tempStart, tempEnd);
             multiMerge(numThreads, fir, sec, tempStart, tempEnd, my_rank);
         } else {
             Block fir; 
@@ -273,10 +310,11 @@ void multiMerge(int numThreads, Block first, Block second, long tempStart, long 
             Block sec;
             sec.start = y2start;
             sec.end = y2end;
-            tempStart = x1end + y1size;
+            tempStart = tempStart + xsize + y1size;
             tempEnd = tempStart + xsize + y2size;
-            printf("Thread %ld first: %ld --> %ld\n", my_rank, fir.start, fir.end);
-            printf("Thread %ld second: %ld --> %ld\n", my_rank, sec.start, sec.end);
+  //          printf("Thread %ld first: %ld --> %ld\n", my_rank, fir.start, fir.end);
+  //          printf("Thread %ld second: %ld --> %ld\n", my_rank, sec.start, sec.end);
+            printf("Thread %ld of %d calling multimerge temp %ld - %ld\n", my_rank, numThreads, tempStart, tempEnd);
             multiMerge(numThreads, fir, sec, tempStart, tempEnd, my_rank);
         }
     }

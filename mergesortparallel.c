@@ -14,7 +14,7 @@ typedef struct Block {
     long start;
     long end;
 } Block;
-/*
+*/
 
 
 /* Function Declarations */
@@ -84,7 +84,6 @@ void* threadFunc(void* rank){
 
     int divisor = 2;
     int difference = 1;
-    int partner = 0;
     int rebase;
     Block beginningRecur;
     Block beginningRecur2;
@@ -106,30 +105,17 @@ void* threadFunc(void* rank){
 
     // Tree reduction to divide work amoung threads
     while(difference < threadCount) {
-        
-        // compensate for uneven amount of threads
-        /*if(myRank % divisor == 0){
-            partner = myRank + difference;
-            if(partner < threadCount){
-                beginningRecur.start = myFirsti;
-                beginningRecur.end = myLasti;
-                beginningRecur2.start = myLasti + 1;
-                beginningRecur2.end = myFirsti + (pow(2, difference) * (n / threadCount));
-            
-        } else {
-
-        }}*/
 
         quotient *= 2;
         rebase = myRank / divisor;
-        myCount = (pow(2, difference) * (n / threadCount));
+        myCount = quotient;
         myFirsti = rebase * myCount;
         myLasti = myFirsti + (myCount / 2);
         
         beginningRecur.start = myFirsti;
         beginningRecur.end = myLasti;
         beginningRecur2.start = myLasti;
-        beginningRecur2.end = myFirsti + (pow(2, difference) * (n / threadCount));
+        beginningRecur2.end = myFirsti + myCount;
         printf("whileloop multimerge Thread %ld, divisor %d, first %ld - %ld, second %ld - %ld myCount: %ld\n", 
         myRank, divisor, beginningRecur.start, beginningRecur.end, beginningRecur2.start, beginningRecur2.end, myCount);
         multiMerge(divisor, beginningRecur, beginningRecur2, beginningRecur.start, beginningRecur2.end, myRank);

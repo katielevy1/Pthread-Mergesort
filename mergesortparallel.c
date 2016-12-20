@@ -54,6 +54,7 @@ int mergeSortParallel() {
     for(i = 0; i < threadCount; i++){
         pthread_join(threads[i], NULL);
     }
+    free(threads);
     return 0;
 }
 
@@ -120,8 +121,13 @@ void* threadFunc(void* rank){
         // Divide the remainder elements evenly amoungst the threads
         if(remainder != 0){
             if(((floor(myRank/(pow(2, level)))) * pow(2, level)) < remainder){
-                long amount = pow(2, level) + 1;
-                amount = remainder % amount;
+                int amount;
+                if(remainder >= pow(2, level)){
+                    amount = remainder / pow(2, level);
+                    amount = amount % (int)(pow(2, level) + 1);
+                } else{
+                    amount = remainder % ((int)pow(2, level) + 1);
+                }
                 myCount = quotient + amount;
                 myFirsti = rebase * myCount;
                 if(level == 1){
@@ -130,7 +136,7 @@ void* threadFunc(void* rank){
                 }else{
                     myLasti = myFirsti + (quotient/2) + (amount % ((int)pow(2, level-1)+1));
                 }
-                printf("Thread %ld, myFirsti %ld, quotient %ld, amount %ld, level %ld\n",
+                printf("Thread %ld, myFirsti %ld, quotient %ld, amount %d, level %ld\n",
                     myRank, myFirsti, quotient, amount, level);
             } else{
                 myFirsti += remainder;
@@ -279,13 +285,14 @@ void multiMerge(int numThreads, Block first, Block second, long tempStart, long 
         printf("Thread %ld merging first %ld - %ld and second %ld - %ld temp %ld - %ld\n", my_rank, first.start, first.end, second.start, second.end, tempStart, tempEnd);
         mergeParallel(first, second, tempStart, tempEnd);
     } else {
-        long x1start, x2start, x1end, x2end, xsize;
+        long x1start, x2start, x1end, x2end, x1size, x2size;
         long y1start, y2start, y1end, y2end, y1size, y2size, ymid;
         x1start = first.start;
         x2start = (first.start + first.end + 1) / 2;
         x1end = x2start;
         x2end = first.end;
-        xsize = x1end - x1start;
+        x1size = x1end - x1start;
+        x2size = x2end - x2start;
 
         y1start = second.start;
         ymid = binSearch(vecParallel, second.start, second.end - 1, vecParallel[x2start]);
@@ -308,8 +315,9 @@ void multiMerge(int numThreads, Block first, Block second, long tempStart, long 
 
         numThreads /= 2;
         long divide = my_rank % (numThreads * 2);
-        printf("Thread %ld of %d divide %ld \n\tx1start %ld, x2start %ld, x1end %ld, x2end %ld, xsize %ld \
-        y1start %ld, y2start %ld, y1end %ld, y2end %ld, y1size %ld, y2size %ld\n\t temp %ld - %ld\n", my_rank, numThreads * 2, divide, x1start, x2start, x1end, x2end, xsize,
+        printf("Thread %ld of %d divide %ld \n\tx1start %ld, x2start %ld, x1end %ld, x2end %ld, x1size %ld x2size %ld \
+        y1start %ld, y2start %ld, y1end %ld, y2end %ld, y1size %ld, y2size %ld\n\t temp %ld - %ld\n", 
+        my_rank, numThreads * 2, divide, x1start, x2start, x1end, x2end, x1size, x2size,
         y1start, y2start, y1end, y2end, y1size, y2size, tempStart, tempEnd);
         if(my_rank % (numThreads * 2) < numThreads){
             Block fir;
@@ -318,7 +326,7 @@ void multiMerge(int numThreads, Block first, Block second, long tempStart, long 
             Block sec;
             sec.start = y1start;
             sec.end = y1end;
-            tempEnd = tempStart + xsize + y1size;
+            tempEnd = tempStart + x1size + y1size;
             printf("Thread %ld of %d calling multimerge temp %ld - %ld\n", my_rank, numThreads, tempStart, tempEnd);
             multiMerge(numThreads, fir, sec, tempStart, tempEnd, my_rank);
         } else {
@@ -328,8 +336,8 @@ void multiMerge(int numThreads, Block first, Block second, long tempStart, long 
             Block sec;
             sec.start = y2start;
             sec.end = y2end;
-            tempStart = tempStart + xsize + y1size;
-            tempEnd = tempStart + xsize + y2size;
+            tempStart = tempStart + x1size + y1size;
+            tempEnd = tempStart + x2size + y2size;
             printf("Thread %ld of %d calling multimerge temp %ld - %ld\n", my_rank, numThreads, tempStart, tempEnd);
             multiMerge(numThreads, fir, sec, tempStart, tempEnd, my_rank);
         }

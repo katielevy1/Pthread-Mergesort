@@ -65,6 +65,7 @@ void* threadFunc(void* rank){
      // Get rank of this thread.
     long myRank = (long) rank;  /* Use long in case of 64-bit system */
     long level = 1;
+    
     // Compute starting and ending indices for this thread to sum.
     long quotient = n / threadCount;
     long remainder = n % threadCount;
@@ -85,12 +86,12 @@ void* threadFunc(void* rank){
         printParallel(0, n);
 
     }
-    // Mergesort that section of the array
+    // Mergesort that starting subarray
     driverParallel(myFirsti, myLasti-1);
 
     int divisor = 2;
     int difference = 1;
-    int rebase;
+    int rebase, indexAddOn;
     Block beginningRecur;
     Block beginningRecur2;
 
@@ -120,25 +121,41 @@ void* threadFunc(void* rank){
 
         // Divide the remainder elements evenly amoungst the threads
         if(remainder != 0){
+            // Check if a remainder value should be included
             if(((floor(myRank/(pow(2, level)))) * pow(2, level)) < remainder){
                 int amount;
+                // Check if remainder spread accross more than one team of threads
                 if(remainder >= pow(2, level)){
-                    amount = remainder / pow(2, level);
-                    amount = amount % (int)(pow(2, level) + 1);
+                    myFirsti = -1;
+                    // Check if each thread in team has remainder value
+                    if((floor(myRank/(pow(2, level))) + 1) * pow(2, level) <= remainder){
+                        amount = (int)pow(2, level);
+                    }else{
+                        amount = remainder / pow(2, level);
+                        amount = amount % (int)(pow(2, level) + 1);
+                        myFirsti = (rebase * myCount) + (remainder - amount);
+                    }
                 } else{
+                    // When remainder is all in one team
                     amount = remainder % ((int)pow(2, level) + 1);
                 }
+
+                // Determine number of elements team is assigned to
                 myCount = quotient + amount;
-                myFirsti = rebase * myCount;
+                if(myFirsti == -1){
+                    myFirsti = rebase * myCount;
+                }
+                // Last i is dependent on how many remainder values
                 if(level == 1){
                     myLasti = myFirsti + (quotient/2) + 1;
-
                 }else{
                     myLasti = myFirsti + (quotient/2) + (amount % ((int)pow(2, level-1)+1));
                 }
                 printf("Thread %ld, myFirsti %ld, quotient %ld, amount %d, level %ld\n",
                     myRank, myFirsti, quotient, amount, level);
             } else{
+                // When no remainder values are assigned to team
+                // But have to add to index the remainder values in the lower numbered teams
                 myFirsti += remainder;
                 myLasti = myFirsti + (myCount / 2);
             }
@@ -153,10 +170,14 @@ void* threadFunc(void* rank){
         beginningRecur2.end = myFirsti + myCount;
         printf("whileloop multimerge Thread %ld, divisor %d, first %ld - %ld, second %ld - %ld myCount: %ld\n", 
         myRank, divisor, beginningRecur.start, beginningRecur.end, beginningRecur2.start, beginningRecur2.end, myCount);
+        
+        // Call multiMerge to divide the two arrays by dividing them into x1, x2, y1, y2 until only one thread is assigned
         multiMerge(divisor, beginningRecur, beginningRecur2, beginningRecur.start, beginningRecur2.end, myRank);
+        
         divisor *= 2;
         difference *=2;
         level++;
+
         // A barrier for all threads to be on the same level
         pthread_mutex_lock(&lock);
         threads_ready++;
@@ -211,6 +232,7 @@ int driverParallel(int start, int stop){
 }
 
 // Merges two arrays
+// Called by thread when only that thread is assigned to merge two subarrays
 int mergeParallel(Block x, Block y, long tempStart, long tempEnd){
     // Fill array if one of the arrays is empty
     if(x.start == x.end){
@@ -283,8 +305,10 @@ void multiMerge(int numThreads, Block first, Block second, long tempStart, long 
     
     if (numThreads == 1){
         printf("Thread %ld merging first %ld - %ld and second %ld - %ld temp %ld - %ld\n", my_rank, first.start, first.end, second.start, second.end, tempStart, tempEnd);
+        // Merge the two arrays
         mergeParallel(first, second, tempStart, tempEnd);
     } else {
+        // Determine the indices for x1, x2, y1, and y2
         long x1start, x2start, x1end, x2end, x1size, x2size;
         long y1start, y2start, y1end, y2end, y1size, y2size, ymid;
         x1start = first.start;
@@ -313,6 +337,7 @@ void multiMerge(int numThreads, Block first, Block second, long tempStart, long 
         y1size = y1end - y1start;
         y2size = y2end - y2start;
 
+        // Split the threads in half and assign half the work
         numThreads /= 2;
         long divide = my_rank % (numThreads * 2);
         printf("Thread %ld of %d divide %ld \n\tx1start %ld, x2start %ld, x1end %ld, x2end %ld, x1size %ld x2size %ld \
@@ -320,6 +345,7 @@ void multiMerge(int numThreads, Block first, Block second, long tempStart, long 
         my_rank, numThreads * 2, divide, x1start, x2start, x1end, x2end, x1size, x2size,
         y1start, y2start, y1end, y2end, y1size, y2size, tempStart, tempEnd);
         if(my_rank % (numThreads * 2) < numThreads){
+            // Assigned to work on x1 and y1
             Block fir;
             fir.start = x1start;
             fir.end = x1end;
@@ -330,6 +356,7 @@ void multiMerge(int numThreads, Block first, Block second, long tempStart, long 
             printf("Thread %ld of %d calling multimerge temp %ld - %ld\n", my_rank, numThreads, tempStart, tempEnd);
             multiMerge(numThreads, fir, sec, tempStart, tempEnd, my_rank);
         } else {
+            // Assigned to work on x2 and y2
             Block fir; 
             fir.start = x2start;
             fir.end = x2end;
